@@ -372,9 +372,9 @@ public final class MainActivity extends Activity {
         boolean fromOnline=activeOnline && onlineResults.contains(place);
         String content="Category: "+place.type+
             "\nAddress: "+(place.address.isEmpty()?"Not listed":place.address)+
-            "\\nPhone: "+(place.phone.isEmpty()?"Not listed":place.phone)+
-            "\\nCoordinates: "+String.format(Locale.US,"%.6f, %.6f",place.lat,place.lon)+
-            "\\nSource: "+place.source;
+            "\nPhone: "+(place.phone.isEmpty()?"Not listed":place.phone)+
+            "\nCoordinates: "+String.format(Locale.US,"%.6f, %.6f",place.lat,place.lon)+
+            "\nSource: "+place.source;
         AlertDialog.Builder dialog=new AlertDialog.Builder(this)
             .setTitle(place.name).setMessage(content);
         dialog.setPositiveButton(place.saved?"★ Unsave":"☆ Save offline",
