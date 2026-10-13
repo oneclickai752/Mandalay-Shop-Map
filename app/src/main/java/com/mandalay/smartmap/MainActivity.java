@@ -21,6 +21,9 @@ import android.view.inputmethod.InputMethodManager;
 import android.content.Context;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ProgressBar;
+import android.content.res.ColorStateList;
+import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -41,7 +44,11 @@ public final class MainActivity extends Activity {
     private TextView status, resultHeader;
     private EditText searchBox;
     private LinearLayout results;
-    private Button syncButton, savedButton;
+    private Button syncButton, savedButton, modeOffline, modeOnline;
+    private TextView progressText;
+    private ProgressBar syncProgress;
+    private boolean activeOnline=false, onlineBusy=false;
+    private List<Place> onlineResults=new ArrayList<>();
     private boolean favoritesOnly=false, busy=false;
     private List<Road> roads=new ArrayList<>();
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
@@ -55,71 +62,172 @@ public final class MainActivity extends Activity {
     }
 
     private void buildScreen() {
-        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(248,250,255));
-        root.setPadding(dp(12),dp(12),dp(12),dp(8));
+        LinearLayout root=new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.rgb(247,249,254));
+        root.setPadding(dp(12),dp(5),dp(12),dp(6));
         setContentView(root);
 
-        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title=new TextView(this);title.setText("MANDALAY SMART MAP");
-        title.setTextSize(19);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);title.setTextColor(BLUE);
-        header.addView(title,new LinearLayout.LayoutParams(0,dp(44),1));
-        Button near=makeButton("◎ GPS",false);header.addView(near);near.setOnClickListener(v->locateMe());
+        LinearLayout header=new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout titleGroup=new LinearLayout(this);
+        titleGroup.setOrientation(LinearLayout.VERTICAL);
+        TextView title=new TextView(this);
+        title.setText("MANDALAY SMART MAP");
+        title.setTextSize(18);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        title.setTextColor(BLUE);titleGroup.addView(title);
+        TextView subtitle=new TextView(this);
+        subtitle.setText("Mandalay • Online + Offline • v0.3");
+        subtitle.setTextSize(11);subtitle.setTextColor(MID);
+        titleGroup.addView(subtitle);
+        header.addView(titleGroup,new LinearLayout.LayoutParams(0,dp(57),1));
+        Button near=makeButton("◎ GPS",false);
+        near.setOnClickListener(v->locateMe());
+        header.addView(near,new LinearLayout.LayoutParams(dp(70),dp(37)));
         root.addView(header);
 
-        TextView subtitle=new TextView(this);
-        subtitle.setText("မန္တလေး • Online + Offline • Pilot Version 0.1");
-        subtitle.setTextColor(MID);subtitle.setTextSize(12);
-        root.addView(subtitle);
-
-        LinearLayout searchRow=new LinearLayout(this);searchRow.setGravity(Gravity.CENTER_VERTICAL);
-        searchRow.setPadding(0,dp(9),0,dp(6));
-        searchBox=new EditText(this);searchBox.setSingleLine(true);searchBox.setTextSize(15);
+        LinearLayout searchRow=new LinearLayout(this);
+        searchRow.setGravity(Gravity.CENTER_VERTICAL);
+        searchBox=new EditText(this);
+        searchBox.setSingleLine(true);
+        searchBox.setTextSize(14);
         searchBox.setHint("ဆိုင် / Hotpot / 41 လမ်း 83 လမ်း");
-        searchBox.setPadding(dp(13),dp(7),dp(7),dp(7));
-        searchBox.setBackground(bg(Color.WHITE,dp(12),Color.rgb(222,228,242)));
-        searchRow.addView(searchBox,new LinearLayout.LayoutParams(0,dp(46),1));
-        Button find=makeButton("ရှာမည်",true);find.setOnClickListener(v->search());
-        LinearLayout.LayoutParams f=new LinearLayout.LayoutParams(-2,dp(46));f.leftMargin=dp(7);searchRow.addView(find,f);
+        searchBox.setPadding(dp(12),0,dp(10),0);
+        searchBox.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        searchBox.setBackground(bg(Color.WHITE,dp(11),Color.rgb(218,225,239)));
+        searchRow.addView(searchBox,new LinearLayout.LayoutParams(0,dp(45),1));
+        Button find=makeButton("ရှာမည်",true);
+        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(dp(77),dp(45));
+        fp.leftMargin=dp(7);
+        searchRow.addView(find,fp);
+        find.setOnClickListener(v->search());
+        searchBox.setOnEditorActionListener((v,action,event)->{
+            if(action==EditorInfo.IME_ACTION_SEARCH){ search();return true; }
+            return false;
+        });
         root.addView(searchRow);
 
-        LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL);
-        syncButton=makeButton("↻ Sync Map",true);
+        LinearLayout modeRow=new LinearLayout(this);
+        modeRow.setGravity(Gravity.CENTER_VERTICAL);
+        modeRow.setPadding(0,dp(6),0,dp(4));
+        modeOffline=makeButton("● Offline",true);
+        modeOnline=makeButton("○ Online OSM",false);
+        modeRow.addView(modeOffline,new LinearLayout.LayoutParams(0,dp(34),1));
+        LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(0,dp(34),1);
+        mp.leftMargin=dp(6);modeRow.addView(modeOnline,mp);
+        modeOffline.setOnClickListener(v->selectMode(false));
+        modeOnline.setOnClickListener(v->selectMode(true));
+        root.addView(modeRow);
+
+        LinearLayout actions=new LinearLayout(this);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        syncButton=makeButton("↻ Sync",true);
         savedButton=makeButton("☆ Saved",false);
         Button add=makeButton("+ ဆိုင်ထည့်",false);
-        Button online=makeButton("Web Search",false);
-        actions.addView(syncButton,weightButton());actions.addView(savedButton,weightButton());
-        actions.addView(add,weightButton());actions.addView(online,weightButton());
+        Button web=makeButton("🌐 Web",false);
+        actions.addView(syncButton,weightButton());
+        actions.addView(savedButton,weightButton());
+        actions.addView(add,weightButton());
+        actions.addView(web,weightButton());
         root.addView(actions);
         syncButton.setOnClickListener(v->sync());
-        savedButton.setOnClickListener(v->{favoritesOnly=!favoritesOnly;savedButton.setText(favoritesOnly?"★ All":"☆ Saved");search();});
+        savedButton.setOnClickListener(v->{
+            favoritesOnly=!favoritesOnly;
+            savedButton.setText(favoritesOnly?"★ All":"☆ Saved");
+            selectMode(false);
+        });
         add.setOnClickListener(v->addManualPlace());
-        online.setOnClickListener(v->webSearch());
+        web.setOnClickListener(v->webSearch());
 
-        status=new TextView(this);status.setTextSize(12);status.setTextColor(MID);
-        status.setPadding(0,dp(9),0,dp(7));root.addView(status);
+        status=new TextView(this);
+        status.setTextSize(11);
+        status.setTextColor(MID);
+        status.setSingleLine(true);
+        status.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        status.setPadding(dp(2),dp(6),dp(2),dp(4));
+        root.addView(status);
 
-        map=new MapCanvas(this);map.setMarkerListener(this::details);
+        progressText=new TextView(this);
+        progressText.setTextSize(11);progressText.setTextColor(BLUE);
+        progressText.setSingleLine(true);
+        progressText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        progressText.setVisibility(View.GONE);
+        root.addView(progressText);
+
+        syncProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+        syncProgress.setIndeterminate(false);
+        syncProgress.setMax(100);
+        syncProgress.setProgressTintList(ColorStateList.valueOf(BLUE));
+        syncProgress.setProgressBackgroundTintList(ColorStateList.valueOf(Color.rgb(224,232,244)));
+        syncProgress.setVisibility(View.GONE);
+        LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(6));
+        pp.bottomMargin=dp(6);
+        root.addView(syncProgress,pp);
+
+        map=new MapCanvas(this);
+        map.setMarkerListener(this::details);
         LinearLayout.LayoutParams mapParams=new LinearLayout.LayoutParams(-1,0,1);
+        mapParams.topMargin=dp(1);
         root.addView(map,mapParams);
 
-        resultHeader=new TextView(this);resultHeader.setTextColor(BLUE);resultHeader.setTextSize(15);
+        LinearLayout resultBar=new LinearLayout(this);
+        resultBar.setGravity(Gravity.CENTER_VERTICAL);
+        resultHeader=new TextView(this);
+        resultHeader.setTextColor(BLUE);resultHeader.setTextSize(15);
         resultHeader.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
-        resultHeader.setPadding(0,dp(8),0,dp(4));root.addView(resultHeader);
-        ScrollView scroller=new ScrollView(this);scroller.setFillViewport(true);
-        results=new LinearLayout(this);results.setOrientation(LinearLayout.VERTICAL);
+        resultBar.addView(resultHeader,new LinearLayout.LayoutParams(0,dp(36),1));
+        TextView label=new TextView(this);
+        label.setText("Map + List");
+        label.setTextSize(11);label.setTextColor(MID);
+        resultBar.addView(label);
+        root.addView(resultBar);
+
+        ScrollView scroller=new ScrollView(this);
+        scroller.setFillViewport(true);
+        scroller.setVerticalScrollBarEnabled(false);
+        results=new LinearLayout(this);
+        results.setOrientation(LinearLayout.VERTICAL);
         scroller.addView(results);
-        root.addView(scroller,new LinearLayout.LayoutParams(-1,dp(176)));
+        root.addView(scroller,new LinearLayout.LayoutParams(-1,dp(190)));
 
         TextView credit=new TextView(this);
-        credit.setText("Map: © OpenStreetMap contributors (ODbL) · Initial internet sync required");
-        credit.setTextColor(MID);credit.setTextSize(10);root.addView(credit);
+        credit.setText("© OpenStreetMap contributors · ODbL • OSM Online results may be incomplete");
+        credit.setTextSize(9);credit.setSingleLine(true);
+        credit.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        credit.setTextColor(MID);
         credit.setOnClickListener(v->openUrl("https://www.openstreetmap.org/copyright"));
+        root.addView(credit);
+    }
+
+    private void selectMode(boolean online) {
+        activeOnline=online;
+        modeOffline.setText(online?"○ Offline":"● Offline");
+        modeOnline.setText(online?"● Online OSM":"○ Online OSM");
+        modeOffline.setTextColor(online?BLUE:Color.WHITE);
+        modeOffline.setBackground(bg(online?Color.WHITE:BLUE,dp(9),
+            online?Color.rgb(218,228,244):BLUE));
+        modeOnline.setTextColor(online?Color.WHITE:BLUE);
+        modeOnline.setBackground(bg(online?BLUE:Color.WHITE,dp(9),
+            online?BLUE:Color.rgb(218,228,244)));
+        if(online) {
+            renderResults(onlineResults,true);
+        } else {
+            searchOffline();
+        }
+    }
+
+    private void updateSyncProgress(String stage,int completed,int total) {
+        int percent=Math.max(0,Math.min(100,(int)Math.round(completed*100.0/Math.max(1,total))));
+        syncProgress.setVisibility(View.VISIBLE);
+        progressText.setVisibility(View.VISIBLE);
+        syncProgress.setProgress(percent);
+        progressText.setText(percent+"% • "+stage);
     }
 
     private void loadFromDisk(){
         roads=db.allRoads();map.setRoads(roads);
-        updateCount();search();
+        updateCount();
+        if(!activeOnline) searchOffline();
     }
 
     private void updateCount(){
@@ -127,74 +235,189 @@ public final class MainActivity extends Activity {
             " shops/places · downtown pilot zone");
     }
 
-    private void search(){
-        String keyword=searchBox.getText().toString().trim();
+    private void search() {
         hideKeyboard();
-        if(!keyword.isEmpty()){
+        if(activeOnline) {
+            searchOnline();
+        } else {
+            searchOffline();
+        }
+    }
+
+    private void searchOffline() {
+        String keyword=searchBox.getText().toString().trim();
+        if(!keyword.isEmpty()) {
             Coordinate point=StreetFinder.find(roads,keyword);
-            if(point!=null){map.focus(point.lat,point.lon);
-                Toast.makeText(this,"လမ်းဆုံတည်နေရာ တွေ့ပါတယ်",Toast.LENGTH_SHORT).show();}
+            if(point!=null) {
+                map.focus(point.lat,point.lon);
+                toast("လမ်းဆုံတည်နေရာ တွေ့ပါပြီ");
+            }
         }
-        List<Place> found=db.searchPlaces(keyword,favoritesOnly,100);
-        map.setPlaces(found);
-        resultHeader.setText("ဆိုင်ရလဒ် ("+found.size()+(found.size()==100?"+":"")+")"+
-                (favoritesOnly?" · Favorites":""));
+        renderResults(db.searchPlaces(keyword,favoritesOnly,100),false);
+    }
+
+    private void searchOnline() {
+        final String keyword=searchBox.getText().toString().trim();
+        if(keyword.isEmpty()) {
+            toast("ရှာချင်တဲ့ ဆိုင်နာမည်ကို ရိုက်ပါ");
+            return;
+        }
+        if(onlineBusy) return;
+        onlineBusy=true;
+        resultHeader.setText("Searching OpenStreetMap online…");
         results.removeAllViews();
-        if(found.isEmpty()){
-            TextView no=new TextView(this);no.setText("ဒေတာမတွေ့ပါ။ Internet ရှိချိန် Sync Map နှိပ်ပါ။\nOSM မှာမရှိတဲ့ဆိုင်တွေကို + ဆိုင်ထည့် နဲ့ ကိုယ်တိုင်ထည့်နိုင်ပါတယ်။");
-            no.setTextColor(MID);no.setTextSize(13);no.setPadding(dp(12),dp(14),dp(6),dp(14));results.addView(no);return;
-        }
-        for(Place p:found){
-            LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);
-            item.setPadding(dp(12),dp(8),dp(12),dp(8));
-            item.setBackground(bg(Color.WHITE,dp(9),Color.rgb(228,234,246)));
-            TextView name=new TextView(this);name.setText((p.saved?"★ ":"📍 ")+p.name);
-            name.setTextColor(BLUE);name.setTypeface(Typeface.DEFAULT,Typeface.BOLD);name.setTextSize(14);
-            item.addView(name);
-            TextView desc=new TextView(this);
-            desc.setText(p.type+(p.address.isEmpty()?"":" · "+p.address));
-            desc.setTextColor(MID);desc.setTextSize(12);desc.setMaxLines(2);item.addView(desc);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(4);
-            results.addView(item,lp);
-            item.setOnClickListener(v->{map.focus(p.lat,p.lon);details(p);});
-        }
-    }
-
-    private void details(Place p){
-        String details="Category: "+p.type+"\n"+
-             "Address: "+(p.address.isEmpty()?"Not provided in OSM":p.address)+"\n"+
-             "Phone: "+(p.phone.isEmpty()?"Not provided in OSM":p.phone)+"\n"+
-             "Coordinates: "+String.format(Locale.US,"%.6f, %.6f",p.lat,p.lon)+"\n"+
-             "Source: "+p.source;
-        AlertDialog.Builder b=new AlertDialog.Builder(this).setTitle(p.name).setMessage(details);
-        b.setPositiveButton(p.saved?"★ Unsave":"☆ Save",(d,w)->{
-            db.setSaved(p.id,!p.saved);search();});
-        b.setNeutralButton("Map",(d,w)->map.focus(p.lat,p.lon));
-        if(!p.phone.isEmpty()) b.setNegativeButton("Call",(d,w)->{
-            Intent i=new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+p.phone));
-            try{startActivity(i);}catch(Exception ex){toast("Dialer not available");}
-        });
-        else b.setNegativeButton("Close",null);
-        b.show();
-    }
-
-    private void sync(){
-        if(busy)return;
-        busy=true;syncButton.setEnabled(false);
-        status.setText("Online download started…");
+        showMessage("Searching OSM online. This is not Google/Facebook/TikTok search.");
         executor.execute(()->{
-            try{
-                OsmClient.Result result=OsmClient.downloadAndImport(db,s->runOnUiThread(()->status.setText(s)));
+            try {
+                List<Place> found=OnlinePlaceSearch.search(keyword);
                 runOnUiThread(()->{
-                    busy=false;syncButton.setEnabled(true);loadFromDisk();
-                    toast((result.isPartial() ? "Partial update saved: " : "Synced ")+result.roadCount+" road segments + "+result.placeCount+" places"+(result.isPartial() ? ". Tap Sync again later for missing areas." : ""));
+                    onlineBusy=false;
+                    onlineResults=found;
+                    if(activeOnline) renderResults(found,true);
+                    if(found.isEmpty())toast("OSM online: မတွေ့ပါ။ 🌐 Web ကိုစမ်းကြည့်နိုင်ပါတယ်။");
                 });
-            }catch(Exception e){
+            } catch(Exception e) {
+                runOnUiThread(()->{
+                    onlineBusy=false;
+                    if(activeOnline) {
+                        resultHeader.setText("Online search unavailable");
+                        results.removeAllViews();
+                        showMessage("OSM online search unavailable. Try again later or tap 🌐 Web.");
+                    }
+                    toast("Online search error: "+e.getMessage());
+                });
+            }
+        });
+    }
+
+    private void showMessage(String message) {
+        TextView empty=new TextView(this);
+        empty.setText(message);
+        empty.setTextSize(12);
+        empty.setTextColor(MID);
+        empty.setPadding(dp(12),dp(14),dp(10),dp(14));
+        empty.setBackground(bg(Color.WHITE,dp(10),Color.rgb(230,236,245)));
+        results.addView(empty);
+    }
+
+    private void renderResults(List<Place> found, boolean fromOnline) {
+        map.setPlaces(found);
+        resultHeader.setText((fromOnline?"Online OSM":"Offline")+" • Results ("+found.size()+")"
+            +(favoritesOnly&&!fromOnline?" • Saved":""));
+        results.removeAllViews();
+        if(found.isEmpty()) {
+            showMessage(fromOnline
+                ? "OSM online မှာ ဒီဆိုင်ကို မတွေ့သေးပါ။ 🌐 Web Search ကိုစမ်းကြည့်ပါ။"
+                : "Offline ထဲမှာ မတွေ့ပါ။ Online OSM သို့မဟုတ် 🌐 Web ကိုစမ်းကြည့်ပါ။ Sync လည်းလိုနိုင်ပါတယ်။");
+            return;
+        }
+        for(Place place:found) {
+            LinearLayout card=new LinearLayout(this);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setPadding(dp(11),dp(6),dp(6),dp(6));
+            card.setBackground(bg(Color.WHITE,dp(10),Color.rgb(227,233,243)));
+
+            LinearLayout labels=new LinearLayout(this);
+            labels.setOrientation(LinearLayout.VERTICAL);
+            TextView name=new TextView(this);
+            name.setText(place.name);
+            name.setTextColor(BLUE);
+            name.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+            name.setTextSize(13);
+            name.setSingleLine(true);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            labels.addView(name);
+            TextView summary=new TextView(this);
+            String line=place.type;
+            if(!place.address.isEmpty())line+=" • "+place.address;
+            if(!place.phone.isEmpty())line+=" • ☎ "+place.phone;
+            summary.setText(line);
+            summary.setTextColor(MID);
+            summary.setTextSize(11);
+            summary.setSingleLine(true);
+            summary.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            labels.addView(summary);
+            card.addView(labels,new LinearLayout.LayoutParams(0,dp(43),1));
+            Button bookmark=makeButton(place.saved?"★":"☆",false);
+            bookmark.setTextSize(17);
+            card.addView(bookmark,new LinearLayout.LayoutParams(dp(38),dp(35)));
+            bookmark.setOnClickListener(v->saveToggle(place,fromOnline));
+            labels.setOnClickListener(v->{
+                map.focus(place.lat,place.lon);
+                details(place);
+            });
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+            lp.bottomMargin=dp(5);
+            results.addView(card,lp);
+        }
+    }
+
+    private void saveToggle(Place place, boolean fromOnline) {
+        boolean save=!place.saved;
+        if(fromOnline) {
+            if(save) db.saveManualPlace(place);
+            db.setSaved(place.id,save);
+            place.saved=save;
+            updateCount();
+            renderResults(onlineResults,true);
+        } else {
+            db.setSaved(place.id,save);
+            searchOffline();
+        }
+        toast(save?"Saved offline":"Removed from Saved");
+    }
+
+    private void details(Place place) {
+        boolean fromOnline=activeOnline && onlineResults.contains(place);
+        String content="Category: "+place.type+
+            "\\nAddress: "+(place.address.isEmpty()?"Not listed":place.address)+
+            "\\nPhone: "+(place.phone.isEmpty()?"Not listed":place.phone)+
+            "\\nCoordinates: "+String.format(Locale.US,"%.6f, %.6f",place.lat,place.lon)+
+            "\\nSource: "+place.source;
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this)
+            .setTitle(place.name).setMessage(content);
+        dialog.setPositiveButton(place.saved?"★ Unsave":"☆ Save offline",
+            (d,w)->saveToggle(place,fromOnline));
+        dialog.setNeutralButton("Map",(d,w)->map.focus(place.lat,place.lon));
+        if(!place.phone.isEmpty()) {
+            dialog.setNegativeButton("Call",(d,w)->{
+                Intent intent=new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+place.phone));
+                try{startActivity(intent);}catch(Exception e){toast("Dialer not available");}
+            });
+        } else {
+            dialog.setNegativeButton("Close",null);
+        }
+        dialog.show();
+    }
+
+    private void sync() {
+        if(busy)return;
+        busy=true;
+        syncButton.setEnabled(false);
+        updateSyncProgress("Starting download (8 area/type steps)…",0,8);
+        executor.execute(()->{
+            try {
+                OsmClient.Result result=OsmClient.downloadAndImport(db,
+                    (stage,completed,total)->runOnUiThread(
+                        ()->updateSyncProgress(stage,completed,total)));
+                runOnUiThread(()->{
+                    busy=false;
+                    syncButton.setEnabled(true);
+                    loadFromDisk();
+                    updateSyncProgress(result.isPartial()
+                        ?"Finished 8 steps, some areas missing — retry later"
+                        :"All 8 steps completed; offline data saved",8,8);
+                    toast("Saved "+result.roadCount+" roads + "+result.placeCount+
+                        " places"+(result.isPartial()?" (partial)":""));
+                });
+            } catch(Exception e) {
                 runOnUiThread(()->{
                     busy=false;syncButton.setEnabled(true);loadFromDisk();
+                    progressText.setText("Download stopped • saved data retained");
                     new AlertDialog.Builder(this).setTitle("Sync failed")
-                      .setMessage(e.getMessage()+"\n\nInternet or Overpass availability may be limited. Any previously downloaded map is retained.")
-                      .setPositiveButton("OK",null).show();
+                        .setMessage(e.getMessage()+"\\nAlready downloaded data, if any, is preserved.")
+                        .setPositiveButton("OK",null).show();
                 });
             }
         });
