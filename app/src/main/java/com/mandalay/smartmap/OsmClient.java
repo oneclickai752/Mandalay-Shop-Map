@@ -12,64 +12,125 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * An on-demand, explicitly user-triggered OSM dataset import for a downtown Mandalay pilot zone.
- * Public Overpass is a demo source only. Use an owned backend / extract for a production app.
+ * Small, sequential user-triggered downloads for a central-Mandalay pilot area.
+ * The public Overpass API is not suitable for production-wide crawling.
  */
 final class OsmClient {
-    // Pilot extent covers central Mandalay, NOT all of Mandalay District.
     static final double SOUTH=21.935, WEST=96.045, NORTH=22.045, EAST=96.135;
-    private static final String BBOX="(21.935,96.045,22.045,96.135)";
-    private static final String ENDPOINT="https://overpass-api.de/api/interpreter";
-
+    private static final String[] ENDPOINTS={
+        "https://overpass.private.coffee/api/interpreter",
+        "https://overpass-api.de/api/interpreter"
+    };
     interface Progress { void onProgress(String state); }
-    static final class Result { int roadCount, placeCount; }
+
+    static final class Result {
+        int roadCount, placeCount, failedRoadTiles, failedPlaceTiles;
+        boolean isPartial() { return failedRoadTiles > 0 || failedPlaceTiles > 0; }
+    }
 
     static Result downloadAndImport(MandalayDb db, Progress progress) throws Exception {
-        // Named and unnamed streets are both drawn; named ones can be searched as intersections.
-        progress.onProgress("Downloading Mandalay roads (first import needs internet)…");
-        JSONObject roadsJson = request("[out:json][timeout:90];way[\"highway\"]"+BBOX+";out geom;");
-        List<Road> roads = parseRoads(roadsJson);
-        if (roads.isEmpty()) throw new Exception("Overpass returned no roads; local data was not replaced.");
-        progress.onProgress("Saving " + roads.size() + " road segments…");
-        db.replaceRoads(roads);
-
-        progress.onProgress("Downloading business records…");
-        String q = "[out:json][timeout:90];("+
-            "nwr[\"shop\"]"+BBOX+";"+
-            "nwr[\"amenity\"~\"restaurant|cafe|fast_food|pharmacy|bank|hospital|clinic|fuel|marketplace\"]"+BBOX+";"+
-            "nwr[\"tourism\"~\"hotel|guest_house|hostel\"]"+BBOX+";"+
-            ");out center;";
-        List<Place> places = parsePlaces(request(q));
-        progress.onProgress("Saving " + places.size() + " businesses…");
-        db.mergePlaces(places);
-        Result result = new Result(); result.roadCount=roads.size(); result.placeCount=places.size();
+        Result result=new Result();
+        Exception lastFailure=null;
+        // Four small areas reduce Overpass execution cost and allow partial offline saving.
+        final double midLat=(SOUTH+NORTH)/2.0, midLon=(WEST+EAST)/2.0;
+        final double[][] tiles={
+            {SOUTH,WEST,midLat,midLon}, {SOUTH,midLon,midLat,EAST},
+            {midLat,WEST,NORTH,midLon}, {midLat,midLon,NORTH,EAST}
+        };
+        for(int i=0;i<tiles.length;i++) {
+            double[] t=tiles[i];
+            String bounds=String.format(Locale.US,"(%.6f,%.6f,%.6f,%.6f)",t[0],t[1],t[2],t[3]);
+            progress.onProgress("Roads "+(i+1)+"/4 — downloading smaller area…");
+            String roadsQuery="[out:json][timeout:35][maxsize:134217728];"+
+                "way[\"highway\"~\"^(residential|unclassified|living_street|pedestrian|primary|secondary|tertiary|trunk|motorway|service|road|primary_link|secondary_link|tertiary_link)$\"]"+
+                bounds+";out geom;";
+            try {
+                List<Road> roads=parseRoads(request(roadsQuery));
+                if(!roads.isEmpty()) {
+                    db.mergeRoads(roads);
+                    result.roadCount+=roads.size();
+                } else {
+                    result.failedRoadTiles++;
+                }
+            } catch(Exception ex) {
+                lastFailure=ex;
+                result.failedRoadTiles++;
+            }
+            progress.onProgress("Places "+(i+1)+"/4 — downloading business data…");
+            String placesQuery="[out:json][timeout:35][maxsize:134217728];("+
+                "nwr[\"shop\"]"+bounds+";"+
+                "nwr[\"amenity\"~\"^(restaurant|cafe|fast_food|pharmacy|bank|hospital|clinic|fuel|marketplace)$\"]"+bounds+";"+
+                "nwr[\"tourism\"~\"^(hotel|guest_house|hostel)$\"]"+bounds+";"+
+                ");out center;";
+            try {
+                List<Place> places=parsePlaces(request(placesQuery));
+                db.mergePlaces(places);
+                result.placeCount+=places.size();
+            } catch(Exception ex) {
+                lastFailure=ex;
+                result.failedPlaceTiles++;
+            }
+            // Polite, sequential requests: do not flood community-hosted endpoints.
+            if(i<tiles.length-1) Thread.sleep(1500);
+        }
+        if(db.roadCount()==0 && db.placeCount()==0) {
+            throw new Exception("No map data was downloaded. Overpass servers may be busy or inaccessible on this network."
+                +(lastFailure==null?"":" Last error: "+lastFailure.getMessage()));
+        }
+        progress.onProgress(result.isPartial()
+            ? "Partial sync saved. Some areas unavailable; retry later."
+            : "Offline sync completed. Map is ready.");
         return result;
     }
 
-    private static JSONObject request(String overpassQuery) throws Exception {
-        HttpURLConnection con=(HttpURLConnection)new URL(ENDPOINT).openConnection();
-        try {
-            con.setRequestMethod("POST"); con.setDoOutput(true);
-            con.setConnectTimeout(20000); con.setReadTimeout(120000);
-            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-            con.setRequestProperty("User-Agent", "MandalaySmartMapPilot/0.1 (personal research prototype)");
-            byte[] body=("data="+URLEncoder.encode(overpassQuery,"UTF-8")).getBytes(StandardCharsets.UTF_8);
-            try(OutputStream os=con.getOutputStream()){os.write(body);}
-            int code=con.getResponseCode();
-            if(code!=200) throw new Exception("Overpass HTTP "+code+". Try again later or switch connection.");
-            ByteArrayOutputStream out=new ByteArrayOutputStream();
-            byte[] buf=new byte[16384]; int n; int total=0;
-            try(InputStream in=con.getInputStream()){
-                while((n=in.read(buf))!=-1){
-                    total+=n;
-                    if(total>32*1024*1024) throw new Exception("Map response too large for pilot import");
-                    out.write(buf,0,n);
+    private static JSONObject request(String query) throws Exception {
+        Exception last=null;
+        for(String endpoint:ENDPOINTS) {
+            HttpURLConnection con=null;
+            try {
+                con=(HttpURLConnection)new URL(endpoint).openConnection();
+                con.setRequestMethod("POST");
+                con.setDoOutput(true);
+                con.setConnectTimeout(15000);
+                con.setReadTimeout(55000);
+                con.setRequestProperty("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+                con.setRequestProperty("Accept","application/json");
+                con.setRequestProperty("User-Agent","MandalaySmartMapPilot/0.2 (OpenStreetMap community pilot)");
+                byte[] body=("data="+URLEncoder.encode(query,"UTF-8")).getBytes(StandardCharsets.UTF_8);
+                try(OutputStream os=con.getOutputStream()) { os.write(body); }
+                int code=con.getResponseCode();
+                if(code!=200) {
+                    String msg="Overpass HTTP "+code+" from "+new URL(endpoint).getHost();
+                    if(code==400 || code==401 || code==403) throw new IllegalArgumentException(msg);
+                    throw new Exception(msg);
                 }
+                ByteArrayOutputStream out=new ByteArrayOutputStream();
+                byte[] buf=new byte[16384]; int n, total=0;
+                try(InputStream in=con.getInputStream()) {
+                    while((n=in.read(buf))!=-1) {
+                        total+=n;
+                        if(total>16*1024*1024) throw new Exception("Map response exceeded 16 MB");
+                        out.write(buf,0,n);
+                    }
+                }
+                JSONObject json=new JSONObject(out.toString("UTF-8"));
+                String remark=json.optString("remark","");
+                if(!remark.isEmpty()) throw new Exception("Overpass says: "+remark);
+                if(!json.has("elements")) throw new Exception("Overpass response did not include elements");
+                return json;
+            } catch(IllegalArgumentException fatal) {
+                throw fatal; // Syntax/authorization errors won't be fixed by retrying.
+            } catch(Exception ex) {
+                last=ex;
+            } finally {
+                if(con!=null) con.disconnect();
             }
-            return new JSONObject(out.toString("UTF-8"));
-        } finally {con.disconnect();}
+        }
+        throw new Exception("Both Overpass services unavailable. "
+            +(last==null?"Please retry later.":last.getMessage()));
     }
 
     private static List<Road> parseRoads(JSONObject json) throws JSONException {
