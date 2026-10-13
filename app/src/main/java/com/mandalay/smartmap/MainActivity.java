@@ -49,6 +49,7 @@ public final class MainActivity extends Activity {
     private ProgressBar syncProgress;
     private boolean activeOnline=false, onlineBusy=false;
     private List<Place> onlineResults=new ArrayList<>();
+    private String lastOnlineQuery="";
     private boolean favoritesOnly=false, busy=false;
     private List<Road> roads=new ArrayList<>();
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
@@ -210,7 +211,16 @@ public final class MainActivity extends Activity {
         modeOnline.setBackground(bg(online?BLUE:Color.WHITE,dp(9),
             online?BLUE:Color.rgb(218,228,244)));
         if(online) {
-            renderResults(onlineResults,true);
+            String query=searchBox.getText().toString().trim();
+            if(!query.isEmpty() && !query.equalsIgnoreCase(lastOnlineQuery)) {
+                searchOnline();
+            } else if(onlineResults.isEmpty()) {
+                results.removeAllViews();
+                resultHeader.setText("Online OSM • Search");
+                showMessage("Type a shop name and tap ရှာမည် to search OpenStreetMap.");
+            } else {
+                renderResults(onlineResults,true);
+            }
         } else {
             searchOffline();
         }
@@ -273,6 +283,7 @@ public final class MainActivity extends Activity {
                 runOnUiThread(()->{
                     onlineBusy=false;
                     onlineResults=found;
+                    lastOnlineQuery=keyword;
                     if(activeOnline) renderResults(found,true);
                     if(found.isEmpty())toast("OSM online: မတွေ့ပါ။ 🌐 Web ကိုစမ်းကြည့်နိုင်ပါတယ်။");
                 });
@@ -308,7 +319,14 @@ public final class MainActivity extends Activity {
         if(found.isEmpty()) {
             showMessage(fromOnline
                 ? "OSM online မှာ ဒီဆိုင်ကို မတွေ့သေးပါ။ 🌐 Web Search ကိုစမ်းကြည့်ပါ။"
-                : "Offline ထဲမှာ မတွေ့ပါ။ Online OSM သို့မဟုတ် 🌐 Web ကိုစမ်းကြည့်ပါ။ Sync လည်းလိုနိုင်ပါတယ်။");
+                : "Offline ထဲမှာ မတွေ့ပါ။ Online OSM / 🌐 Web ကိုစမ်းကြည့်ပါ။");
+            Button alternative=makeButton(fromOnline?"🌐 Try Web Search":"Search Online OSM",true);
+            LinearLayout.LayoutParams alt=new LinearLayout.LayoutParams(-1,dp(38));
+            alt.topMargin=dp(7);
+            results.addView(alternative,alt);
+            alternative.setOnClickListener(v->{
+                if(fromOnline) webSearch(); else selectMode(true);
+            });
             return;
         }
         for(Place place:found) {
