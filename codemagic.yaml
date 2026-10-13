@@ -8,10 +8,22 @@ workflows:
     scripts:
       - name: Configure Android SDK
         script: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          set -eu
+          SDK_ROOT="${ANDROID_SDK_ROOT:-/usr/local/share/android-sdk}"
+          printf 'sdk.dir=%s\n' "$SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="/usr/local/share/android-sdk/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "Android SDK Manager not found under $SDK_ROOT"
+            exit 1
+          fi
+          echo "Using Android SDK at $SDK_ROOT"
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-35" "build-tools;35.0.0"
       - name: Download Gradle 8.9
         script: |
+          set -eu
           curl -fL --retry 3 https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle-8.9-bin.zip
           unzip -q /tmp/gradle-8.9-bin.zip -d /tmp
       - name: Build native Android debug APK
