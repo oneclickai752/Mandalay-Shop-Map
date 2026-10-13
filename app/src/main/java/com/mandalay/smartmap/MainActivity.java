@@ -371,7 +371,7 @@ public final class MainActivity extends Activity {
     private void details(Place place) {
         boolean fromOnline=activeOnline && onlineResults.contains(place);
         String content="Category: "+place.type+
-            "\\nAddress: "+(place.address.isEmpty()?"Not listed":place.address)+
+            "\nAddress: "+(place.address.isEmpty()?"Not listed":place.address)+
             "\\nPhone: "+(place.phone.isEmpty()?"Not listed":place.phone)+
             "\\nCoordinates: "+String.format(Locale.US,"%.6f, %.6f",place.lat,place.lon)+
             "\\nSource: "+place.source;
@@ -399,8 +399,10 @@ public final class MainActivity extends Activity {
         executor.execute(()->{
             try {
                 OsmClient.Result result=OsmClient.downloadAndImport(db,
-                    (stage,completed,total)->runOnUiThread(
-                        ()->updateSyncProgress(stage,completed,total)));
+                    (stage,completed,total)->runOnUiThread(()->{
+                        updateSyncProgress(stage,completed,total);
+                        if(completed>0 && completed%2==0) loadFromDisk();
+                    }));
                 runOnUiThread(()->{
                     busy=false;
                     syncButton.setEnabled(true);
