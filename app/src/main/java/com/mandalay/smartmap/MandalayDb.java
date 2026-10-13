@@ -96,7 +96,7 @@ final class MandalayDb extends SQLiteOpenHelper {
      */
     List<Place> searchPlaces(String text, boolean favoritesOnly, int limit) {
         String normalized=text.trim().toLowerCase(Locale.ROOT)
-            .replaceAll("[,;:/()\\\\-]+"," ")
+            .replaceAll("[,;:/()_-]+"," ")
             .replaceAll("\\s+"," ");
         String[] raw=normalized.split(" ");
         List<String> terms=new ArrayList<>();
