@@ -82,7 +82,7 @@ final class OsmClient {
             // Polite, sequential requests: do not flood community-hosted endpoints.
             if(i<tiles.length-1) Thread.sleep(1500);
         }
-        if(db.roadCount()==0 && db.placeCount()==0) {
+        if(result.roadCount==0 && result.placeCount==0) {
             throw new Exception("No map data was downloaded. Overpass servers may be busy or inaccessible on this network."
                 +(lastFailure==null?"":" Last error: "+lastFailure.getMessage()));
         }
