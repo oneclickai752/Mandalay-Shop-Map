@@ -48,6 +48,30 @@ public final class WebSearchActivity extends Activity {
         super.onCreate(state);
         db=new WebPlacesDb(this);
         makeUi();
+        // Android Share sheet: the user explicitly chooses what text to save.
+        // No automatic scraping or silently reading other applications.
+        if(Intent.ACTION_SEND.equals(getIntent().getAction())) {
+            String shared=getIntent().getStringExtra(Intent.EXTRA_TEXT);
+            if(shared!=null && !shared.trim().isEmpty()) {
+                final String raw=shared.trim();
+                java.util.regex.Matcher linkMatcher=java.util.regex.Pattern
+                    .compile("https?://[^\\s]+").matcher(raw);
+                String sharedUrl=linkMatcher.find()?linkMatcher.group():"";
+                sharedUrl=sharedUrl.replaceAll("[),.;]+$","");
+                final String sourceUrl=safeHttpUrl(sharedUrl)?sharedUrl:"";
+                String first=raw.split("\\n",2)[0].replace(sourceUrl,"").trim();
+                if(first.isEmpty()||first.length()>110)first="Shared Mandalay shop";
+                final String shopTitle=first;
+                java.util.regex.Matcher phoneMatcher=java.util.regex.Pattern
+                    .compile("(?<![0-9])(?:\\+?95|0)\\s*9(?:[0-9\\s-]{7,14})")
+                    .matcher(raw);
+                final String phone=phoneMatcher.find()?phoneMatcher.group().trim():"";
+                if(!sourceUrl.isEmpty())web.loadUrl(sourceUrl);
+                else searchHome();
+                web.post(()->showSaveDialog(shopTitle,sourceUrl,phone,"",raw));
+                return;
+            }
+        }
         String initialUrl=getIntent().getStringExtra("url");
         String initialQuery=getIntent().getStringExtra("query");
         if(initialQuery!=null)query.setText(initialQuery);
