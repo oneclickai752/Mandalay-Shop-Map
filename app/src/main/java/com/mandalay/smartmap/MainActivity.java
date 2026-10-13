@@ -10,6 +10,9 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
 import android.location.LocationManager;
+import android.location.LocationListener;
+import android.os.Handler;
+import android.os.Looper;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -184,7 +187,7 @@ public final class MainActivity extends Activity {
                 OsmClient.Result result=OsmClient.downloadAndImport(db,s->runOnUiThread(()->status.setText(s)));
                 runOnUiThread(()->{
                     busy=false;syncButton.setEnabled(true);loadFromDisk();
-                    toast("Synced "+result.roadCount+" road segments + "+result.placeCount+" places");
+                    toast((result.isPartial() ? "Partial update saved: " : "Synced ")+result.roadCount+" road segments + "+result.placeCount+" places"+(result.isPartial() ? ". Tap Sync again later for missing areas." : ""));
                 });
             }catch(Exception e){
                 runOnUiThread(()->{
@@ -236,16 +239,43 @@ public final class MainActivity extends Activity {
             return;
         }
         try{
-            LocationManager lm=(LocationManager)getSystemService(LOCATION_SERVICE);
-            Location loc=null;
+            final LocationManager lm=(LocationManager)getSystemService(LOCATION_SERVICE);
+            if(lm==null){ toast("Location service unavailable"); return; }
+            Location recent=null;
             for(String provider:new String[]{LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER}){
-                if(!lm.isProviderEnabled(provider))continue;
-                Location got=lm.getLastKnownLocation(provider);
-                if(got!=null && (loc==null||got.getTime()>loc.getTime()))loc=got;
+                if(!lm.isProviderEnabled(provider)) continue;
+                Location last=lm.getLastKnownLocation(provider);
+                if(last!=null && (recent==null || last.getTime()>recent.getTime())) recent=last;
             }
-            if(loc!=null){map.focus(loc.getLatitude(),loc.getLongitude());toast("Last known location (may be old)");}
-            else toast("No location fix yet. Enable GPS and retry.");
-        }catch(Exception e){toast("Location not available");}
+            if(recent!=null && System.currentTimeMillis()-recent.getTime()<5*60*1000){
+                map.focus(recent.getLatitude(),recent.getLongitude());
+                toast("Location found");
+                return;
+            }
+            final String provider=lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                ? LocationManager.NETWORK_PROVIDER
+                : (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)?LocationManager.GPS_PROVIDER:null);
+            if(provider==null){toast("Turn on Location in phone settings");return;}
+            toast("Searching for current location — keep Location on…");
+            final boolean[] finished={false};
+            final Handler handler=new Handler(Looper.getMainLooper());
+            final LocationListener listener=new LocationListener(){
+                @Override public void onLocationChanged(Location location){
+                    if(finished[0])return;
+                    finished[0]=true;
+                    map.focus(location.getLatitude(),location.getLongitude());
+                    toast("Location found");
+                }
+            };
+            lm.requestSingleUpdate(provider,listener,Looper.getMainLooper());
+            handler.postDelayed(()->{
+                if(!finished[0]){
+                    finished[0]=true;
+                    lm.removeUpdates(listener);
+                    toast("No GPS fix. Try outside with Location enabled.");
+                }
+            },20000);
+        }catch(Exception e){toast("Location unavailable. Check permissions and settings.");}
     }
 
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
