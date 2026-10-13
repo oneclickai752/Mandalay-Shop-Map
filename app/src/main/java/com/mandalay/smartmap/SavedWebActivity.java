@@ -162,13 +162,14 @@ public final class SavedWebActivity extends Activity {
            +"Notes: "+(p.notes.isEmpty()?"None":p.notes)+"\n"
            +"Source URL: "+(p.url.isEmpty()?"None":p.url);
         if(p.latitude!=null && p.longitude!=null)details+="\nMap: "+p.latitude+", "+p.longitude;
+        final String savedDetails=details;
         new AlertDialog.Builder(this)
             .setTitle(p.name)
             .setMessage(details)
             .setPositiveButton("Copy details",(d,w)->{
                 ClipboardManager clipboard=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
                 if(clipboard!=null)clipboard.setPrimaryClip(
-                    ClipData.newPlainText("Saved Mandalay shop", details));
+                    ClipData.newPlainText("Saved Mandalay shop", savedDetails));
                 toast("Copied saved details");
             })
             .setNeutralButton("Open source",(d,w)->openSource(p.url))
