@@ -134,13 +134,25 @@ public final class SavedWebActivity extends Activity {
         LinearLayout actions=new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         Button detail=button("Details",true);
+        Button call=button("Call",false);
         Button source=button("Source",false);
         Button delete=button("Delete",false);
-        actions.addView(detail,new LinearLayout.LayoutParams(0,dp(35),1));
+        actions.addView(detail,new LinearLayout.LayoutParams(0,dp(35),1.2f));
+        if(!place.phone.isEmpty()) {
+            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(35),.85f);
+            cp.leftMargin=dp(5);
+            actions.addView(call,cp);
+            call.setOnClickListener(v->{
+                try {
+                    startActivity(new Intent(Intent.ACTION_DIAL,
+                        Uri.parse("tel:"+place.phone)));
+                } catch(Exception e){toast("Dialer not available");}
+            });
+        }
         LinearLayout.LayoutParams ml=new LinearLayout.LayoutParams(0,dp(35),1);
-        ml.leftMargin=dp(6);actions.addView(source,ml);
-        LinearLayout.LayoutParams dl=new LinearLayout.LayoutParams(0,dp(35),1);
-        dl.leftMargin=dp(6);actions.addView(delete,dl);
+        ml.leftMargin=dp(5);actions.addView(source,ml);
+        LinearLayout.LayoutParams dl=new LinearLayout.LayoutParams(0,dp(35),.95f);
+        dl.leftMargin=dp(5);actions.addView(delete,dl);
         card.addView(actions);
         detail.setOnClickListener(v->showDetails(place));
         source.setOnClickListener(v->openSource(place.url));
