@@ -29,7 +29,7 @@ final class OnlinePlaceSearch {
         String url="https://nominatim.openstreetmap.org/search?"
             +"format=jsonv2&addressdetails=1&extratags=1&limit=15"
             +"&countrycodes=mm&viewbox=95.94,22.18,96.28,21.78&bounded=1"
-            +"&q="+URLEncoder.encode(keyword.trim(),"UTF-8");
+            +"&q="+URLEncoder.encode(keyword.trim().replaceAll("(?i)\\b(shop|store)\\b","").trim(),"UTF-8");
         HttpURLConnection con=(HttpURLConnection)new URL(url).openConnection();
         try {
             con.setRequestMethod("GET");
