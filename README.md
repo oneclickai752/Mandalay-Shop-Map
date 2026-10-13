@@ -1,0 +1,2 @@
+# Mandalay-Shop-Map
+Testapp
