@@ -41,6 +41,31 @@ final class MandalayDb extends SQLiteOpenHelper {
         } finally { db.endTransaction(); }
     }
 
+    /** Preserve previously downloaded map areas when a later Overpass tile fails. */
+    void mergeRoads(List<Road> roads) throws JSONException {
+        if(roads.isEmpty()) return;
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try {
+            for(Road r:roads) {
+                JSONArray geom=new JSONArray();
+                for(int i=0;i<r.latitudes.length;i++) {
+                    JSONArray point=new JSONArray();
+                    point.put(r.latitudes[i]); point.put(r.longitudes[i]); geom.put(point);
+                }
+                ContentValues values=new ContentValues();
+                values.put("id",r.id);
+                values.put("name",r.name);
+                values.put("highway",r.highway);
+                values.put("geometry",geom.toString());
+                db.insertWithOnConflict("roads",null,values,SQLiteDatabase.CONFLICT_REPLACE);
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     void mergePlaces(List<Place> places) {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
