@@ -24,7 +24,7 @@ final class OsmClient {
         "https://overpass.private.coffee/api/interpreter",
         "https://overpass-api.de/api/interpreter"
     };
-    interface Progress { void onProgress(String state); }
+    interface Progress { void onProgress(String stage, int processedSteps, int totalSteps); }
 
     static final class Result {
         int roadCount, placeCount, failedRoadTiles, failedPlaceTiles;
@@ -34,6 +34,8 @@ final class OsmClient {
     static Result downloadAndImport(MandalayDb db, Progress progress) throws Exception {
         Result result=new Result();
         Exception lastFailure=null;
+        int completed=0;
+        progress.onProgress("Starting Mandalay download…",0,8);
         // Four small areas reduce Overpass execution cost and allow partial offline saving.
         final double midLat=(SOUTH+NORTH)/2.0, midLon=(WEST+EAST)/2.0;
         final double[][] tiles={
@@ -43,7 +45,7 @@ final class OsmClient {
         for(int i=0;i<tiles.length;i++) {
             double[] t=tiles[i];
             String bounds=String.format(Locale.US,"(%.6f,%.6f,%.6f,%.6f)",t[0],t[1],t[2],t[3]);
-            progress.onProgress("Roads "+(i+1)+"/4 — downloading smaller area…");
+            progress.onProgress("Roads "+(i+1)+"/4 — downloading smaller area…",completed,8);
             String roadsQuery="[out:json][timeout:35][maxsize:134217728];"+
                 "way[\"highway\"~\"^(residential|unclassified|living_street|pedestrian|primary|secondary|tertiary|trunk|motorway|service|road|primary_link|secondary_link|tertiary_link)$\"]"+
                 bounds+";out geom;";
@@ -59,7 +61,9 @@ final class OsmClient {
                 lastFailure=ex;
                 result.failedRoadTiles++;
             }
-            progress.onProgress("Places "+(i+1)+"/4 — downloading business data…");
+            completed++;
+            progress.onProgress("Roads "+(i+1)+"/4 processed",completed,8);
+            progress.onProgress("Places "+(i+1)+"/4 — downloading business data…",completed,8);
             String placesQuery="[out:json][timeout:35][maxsize:134217728];("+
                 "nwr[\"shop\"]"+bounds+";"+
                 "nwr[\"amenity\"~\"^(restaurant|cafe|fast_food|pharmacy|bank|hospital|clinic|fuel|marketplace)$\"]"+bounds+";"+
@@ -73,6 +77,8 @@ final class OsmClient {
                 lastFailure=ex;
                 result.failedPlaceTiles++;
             }
+            completed++;
+            progress.onProgress("Places "+(i+1)+"/4 processed",completed,8);
             // Polite, sequential requests: do not flood community-hosted endpoints.
             if(i<tiles.length-1) Thread.sleep(1500);
         }
@@ -81,8 +87,8 @@ final class OsmClient {
                 +(lastFailure==null?"":" Last error: "+lastFailure.getMessage()));
         }
         progress.onProgress(result.isPartial()
-            ? "Partial sync saved. Some areas unavailable; retry later."
-            : "Offline sync completed. Map is ready.");
+            ? "8/8 steps attempted — partial data saved."
+            : "8/8 steps done — Offline data ready.",8,8);
         return result;
     }
 
