@@ -7,7 +7,9 @@
 - Browse a business page, tap **☆ Save shop**, review name/address/phone/notes/source URL, then save offline in on-device SQLite
 - For ordinary business websites with JSON-LD `LocalBusiness` structured data, Save shop attempts to prefill some fields (never guarantees correctness)
 - Copy text from a website, then tap **Paste copied info → suggest phone** for optional phone and address suggestions, confirm before saving
-- **★ Saved** opens an offline-searchable shop library with stored phone/address/source links
+- **★ Saved** opens an offline-searchable shop library with stored phone/address/source links and one-tap Call where available
+- Main **Offline Search** also finds the shops you explicitly saved from the web
+- From another Android browser, use the **Share** menu and choose Mandalay Smart Map to review/save shared text or a shop link
 - Blank map is hidden when road data has not been downloaded; saved cards use available screen space
 - Prior V0.3: token-based OSM local search, staged Overpass sync, road map, GPS, manual OSM entry
 
@@ -31,7 +33,8 @@
 2. Tap **🌐 Web Search** (opens INSIDE app).
 3. Search Google or the Facebook/TikTok source filters and open a shop's own page.
 4. Tap **☆ Save shop**; review/fill name, address, phone. Optionally Copy relevant page text and use **Paste copied info** inside the save dialog.
-5. Save. Tap **★ Saved** and verify the record shows up even with airplane mode ON.
-6. Offline Map from OpenStreetMap is a separate data source, not a Google map clone.
+5. Save. Tap **★ Saved** or search the name in **Offline** mode; verify the record appears even with airplane mode ON.
+6. You can also select text in another browser, tap Share, choose Mandalay Smart Map, then review/save it.
+7. Offline Map from OpenStreetMap is a separate data source, not a Google map clone.
 
 © OpenStreetMap contributors / ODbL for OSM data.
