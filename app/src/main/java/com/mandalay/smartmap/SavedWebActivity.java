@@ -36,6 +36,8 @@ public final class SavedWebActivity extends Activity {
         super.onCreate(state);
         db=new WebPlacesDb(this);
         makeUi();
+        String text=getIntent().getStringExtra("query");
+        if(text!=null && !text.isEmpty()) filter.setText(text);
     }
 
     @Override protected void onResume(){super.onResume();refresh();}
