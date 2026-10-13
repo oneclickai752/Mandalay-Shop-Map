@@ -90,10 +90,38 @@ final class MandalayDb extends SQLiteOpenHelper {
         getWritableDatabase().update("places", v, "id=?", new String[]{id});
     }
 
+    /**
+     * Token matching: "jocole mobile shop" can find "Jocole Mobile".
+     * Generic words are ignored; all useful words must occur across name/type/address.
+     */
     List<Place> searchPlaces(String text, boolean favoritesOnly, int limit) {
-        String like = "%" + text.trim().toLowerCase(Locale.ROOT) + "%";
-        String where = "(lower(name) LIKE ? OR lower(type) LIKE ? OR lower(address) LIKE ?)" + (favoritesOnly ? " AND saved=1" : "");
-        return loadPlaces(where, new String[]{like, like, like}, limit);
+        String normalized=text.trim().toLowerCase(Locale.ROOT)
+            .replaceAll("[,;:/()\\\\-]+"," ")
+            .replaceAll("\\s+"," ");
+        String[] raw=normalized.split(" ");
+        List<String> terms=new ArrayList<>();
+        for(String term:raw) {
+            if(term.isEmpty() || term.equals("shop") || term.equals("store")
+                    || term.equals("ဆိုင်") || term.equals("mobile-shop")) continue;
+            if(!terms.contains(term)) terms.add(term);
+            if(terms.size()==6)break;
+        }
+        StringBuilder where=new StringBuilder();
+        List<String> args=new ArrayList<>();
+        for(String term:terms) {
+            if(where.length()>0)where.append(" AND ");
+            where.append("(lower(name) LIKE ? OR lower(type) LIKE ? OR lower(address) LIKE ?)");
+            String value="%"+term+"%";
+            args.add(value);args.add(value);args.add(value);
+        }
+        if(favoritesOnly) {
+            if(where.length()>0)where.append(" AND ");
+            where.append("saved=1");
+        }
+        // With no useful tokens, show general results; searches with generic words
+        // intentionally return the normal list instead of a misleading zero.
+        return loadPlaces(where.length()==0?null:where.toString(),
+            args.isEmpty()?null:args.toArray(new String[0]),limit);
     }
 
     List<Place> allPlaces(int limit) { return loadPlaces(null, null, limit); }
