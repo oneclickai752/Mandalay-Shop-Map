@@ -272,6 +272,43 @@ public final class WebSearchActivity extends Activity {
         EditText lat=field("Latitude (optional, for map pin)","");
         EditText lon=field("Longitude (optional, for map pin)","");
         for(EditText e:new EditText[]{title,tel,addressField,note,link,lat,lon})fields.addView(e);
+
+        // User-initiated clipboard import, not silent website scraping.
+        Button paste=btn("Paste copied info → suggest phone",false);
+        LinearLayout.LayoutParams pasteParams=new LinearLayout.LayoutParams(-1,dp(39));
+        pasteParams.topMargin=dp(6);
+        fields.addView(paste,pasteParams);
+        paste.setOnClickListener(v->{
+            ClipboardManager clipboard=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+            if(clipboard==null || !clipboard.hasPrimaryClip()) {
+                toast("Copy relevant shop information first");
+                return;
+            }
+            ClipData data=clipboard.getPrimaryClip();
+            if(data==null || data.getItemCount()==0)return;
+            CharSequence clip=data.getItemAt(0).coerceToText(this);
+            if(clip==null || clip.length()==0)return;
+            String copied=clip.toString().trim();
+            note.setText(copied.substring(0,Math.min(copied.length(),2000)));
+            if(tel.getText().toString().trim().isEmpty()) {
+                java.util.regex.Matcher m=java.util.regex.Pattern
+                    .compile("(?<![0-9])(?:\\+?95|0)\\s*9(?:[0-9\\s-]{7,14})")
+                    .matcher(copied);
+                if(m.find())tel.setText(m.group().trim());
+            }
+            if(addressField.getText().toString().trim().isEmpty()) {
+                for(String line:copied.split("\\n")) {
+                    String test=line.trim();
+                    if(test.length()>5 && test.length()<175 &&
+                        (test.contains("လမ်း") || test.toLowerCase(Locale.ROOT).contains("street"))) {
+                        addressField.setText(test);
+                        break;
+                    }
+                }
+            }
+            toast("Suggestions filled. Verify before saving.");
+        });
+
         TextView help=new TextView(this);
         help.setText("Automatic metadata may be missing or incorrect. Review details before saving. " +
             "Copy relevant text from the website and paste it into Notes if needed.");
