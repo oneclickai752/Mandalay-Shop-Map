@@ -270,7 +270,49 @@ public final class MainActivity extends Activity {
                 toast("လမ်းဆုံတည်နေရာ တွေ့ပါပြီ");
             }
         }
-        renderResults(db.searchPlaces(keyword,favoritesOnly,100),false);
+        List<Place> osm=db.searchPlaces(keyword,favoritesOnly,100);
+        renderResults(osm,false);
+        // Also search the user's saved web records; OSM must not be the only local source.
+        if(!favoritesOnly) {
+            try(WebPlacesDb savedDb=new WebPlacesDb(this)){
+                List<SavedWebPlace> saved=savedDb.find(keyword);
+                if(!saved.isEmpty()) {
+                    if(osm.isEmpty()) results.removeAllViews();
+                    resultHeader.setText("Saved Web ("+saved.size()+") • Map/OSM ("+osm.size()+")");
+                    int shown=Math.min(saved.size(),25);
+                    for(int i=shown-1;i>=0;i--){
+                        SavedWebPlace entry=saved.get(i);
+                        LinearLayout webCard=new LinearLayout(this);
+                        webCard.setOrientation(LinearLayout.VERTICAL);
+                        webCard.setPadding(dp(12),dp(7),dp(12),dp(7));
+                        webCard.setBackground(bg(Color.WHITE,dp(9),Color.rgb(215,228,245)));
+                        TextView webTitle=new TextView(this);
+                        webTitle.setText("★ "+entry.name+"  · Saved Web");
+                        webTitle.setTextSize(13);
+                        webTitle.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+                        webTitle.setSingleLine(true);
+                        webTitle.setTextColor(BLUE);
+                        webCard.addView(webTitle);
+                        TextView desc=new TextView(this);
+                        desc.setText((entry.address.isEmpty()?"No address":entry.address)
+                            +(entry.phone.isEmpty()?"":" • ☎ "+entry.phone));
+                        desc.setTextSize(11);
+                        desc.setSingleLine(true);
+                        desc.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                        desc.setTextColor(MID);
+                        webCard.addView(desc);
+                        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);
+                        cp.bottomMargin=dp(5);
+                        results.addView(webCard,0,cp);
+                        webCard.setOnClickListener(v->{
+                            Intent intent=new Intent(this,SavedWebActivity.class);
+                            intent.putExtra("query",entry.name);
+                            startActivity(intent);
+                        });
+                    }
+                }
+            }
+        }
     }
 
     private void searchOnline() {
