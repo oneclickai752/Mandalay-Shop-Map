@@ -78,7 +78,7 @@ public final class MainActivity extends Activity {
         title.setTextSize(18);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         title.setTextColor(BLUE);titleGroup.addView(title);
         TextView subtitle=new TextView(this);
-        subtitle.setText("Mandalay • Online + Offline • v0.3");
+        subtitle.setText("Mandalay • Web + Offline • v0.4");
         subtitle.setTextSize(11);subtitle.setTextColor(MID);
         titleGroup.addView(subtitle);
         header.addView(titleGroup,new LinearLayout.LayoutParams(0,dp(57),1));
@@ -112,18 +112,18 @@ public final class MainActivity extends Activity {
         modeRow.setGravity(Gravity.CENTER_VERTICAL);
         modeRow.setPadding(0,dp(6),0,dp(4));
         modeOffline=makeButton("● Offline",true);
-        modeOnline=makeButton("○ Online OSM",false);
+        modeOnline=makeButton("🌐 Web Search",false);
         modeRow.addView(modeOffline,new LinearLayout.LayoutParams(0,dp(34),1));
         LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(0,dp(34),1);
         mp.leftMargin=dp(6);modeRow.addView(modeOnline,mp);
         modeOffline.setOnClickListener(v->selectMode(false));
-        modeOnline.setOnClickListener(v->selectMode(true));
+        modeOnline.setOnClickListener(v->webSearch());
         root.addView(modeRow);
 
         LinearLayout actions=new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         syncButton=makeButton("↻ Sync",true);
-        savedButton=makeButton("☆ Saved",false);
+        savedButton=makeButton("★ Saved",false);
         Button add=makeButton("+ ဆိုင်ထည့်",false);
         Button web=makeButton("🌐 Web",false);
         actions.addView(syncButton,weightButton());
@@ -132,10 +132,13 @@ public final class MainActivity extends Activity {
         actions.addView(web,weightButton());
         root.addView(actions);
         syncButton.setOnClickListener(v->sync());
-        savedButton.setOnClickListener(v->{
+        savedButton.setOnClickListener(v->
+            startActivity(new Intent(this,SavedWebActivity.class)));
+        savedButton.setOnLongClickListener(v->{
             favoritesOnly=!favoritesOnly;
-            savedButton.setText(favoritesOnly?"★ All":"☆ Saved");
-            selectMode(false);
+            searchOffline();
+            toast(favoritesOnly?"OSM offline favorites only":"All offline places");
+            return true;
         });
         add.setOnClickListener(v->addManualPlace());
         web.setOnClickListener(v->webSearch());
@@ -167,7 +170,7 @@ public final class MainActivity extends Activity {
 
         map=new MapCanvas(this);
         map.setMarkerListener(this::details);
-        LinearLayout.LayoutParams mapParams=new LinearLayout.LayoutParams(-1,0,1);
+        LinearLayout.LayoutParams mapParams=new LinearLayout.LayoutParams(-1,dp(215));
         mapParams.topMargin=dp(1);
         root.addView(map,mapParams);
 
@@ -189,7 +192,7 @@ public final class MainActivity extends Activity {
         results=new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
         scroller.addView(results);
-        root.addView(scroller,new LinearLayout.LayoutParams(-1,dp(190)));
+        root.addView(scroller,new LinearLayout.LayoutParams(-1,0,1));
 
         TextView credit=new TextView(this);
         credit.setText("© OpenStreetMap contributors · ODbL • OSM Online results may be incomplete");
@@ -236,19 +239,23 @@ public final class MainActivity extends Activity {
 
     private void loadFromDisk(){
         roads=db.allRoads();map.setRoads(roads);
+        // Hide the giant blank map; use available vertical space for shop results.
+        map.setVisibility(roads.isEmpty()?View.GONE:View.VISIBLE);
         updateCount();
         if(!activeOnline) searchOffline();
     }
 
     private void updateCount(){
-        status.setText("Offline: " + db.roadCount() + " road segments · " + db.placeCount() +
-            " shops/places · downtown pilot zone");
+        int webSaved=0;
+        try(WebPlacesDb saved=new WebPlacesDb(this)){ webSaved=saved.count(); }
+        status.setText("Local OSM: "+db.placeCount()+" places / "+db.roadCount()+
+            " roads • Web saved: "+webSaved);
     }
 
     private void search() {
         hideKeyboard();
         if(activeOnline) {
-            searchOnline();
+            webSearch();
         } else {
             searchOffline();
         }
@@ -318,14 +325,14 @@ public final class MainActivity extends Activity {
         results.removeAllViews();
         if(found.isEmpty()) {
             showMessage(fromOnline
-                ? "OSM online မှာ ဒီဆိုင်ကို မတွေ့သေးပါ။ 🌐 Web Search ကိုစမ်းကြည့်ပါ။"
-                : "Offline ထဲမှာ မတွေ့ပါ။ Online OSM / 🌐 Web ကိုစမ်းကြည့်ပါ။");
-            Button alternative=makeButton(fromOnline?"🌐 Try Web Search":"Search Online OSM",true);
+                ? "OSM Data မှာ မတွေ့ပါ။ Web Search မှာ ထပ်ရှာနိုင်ပါတယ်။"
+                : "Offline မှာ မတွေ့ပါ။ 🌐 Web Search မှာရှာပြီး ☆ Save shop နှိပ်နိုင်ပါတယ်။");
+            Button alternative=makeButton("🌐 Search Web & Save",true);
             LinearLayout.LayoutParams alt=new LinearLayout.LayoutParams(-1,dp(38));
             alt.topMargin=dp(7);
             results.addView(alternative,alt);
             alternative.setOnClickListener(v->{
-                if(fromOnline) webSearch(); else selectMode(true);
+                webSearch();
             });
             return;
         }
@@ -470,9 +477,9 @@ public final class MainActivity extends Activity {
 
     private void webSearch(){
         String q=searchBox.getText().toString().trim();
-        if(q.isEmpty()){toast("Type shop name first");return;}
-        try{openUrl("https://www.google.com/search?q="+URLEncoder.encode(q+" Mandalay Myanmar shop phone address","UTF-8"));}
-        catch(Exception e){toast("Web search unavailable");}
+        Intent browser=new Intent(this,WebSearchActivity.class);
+        browser.putExtra("query",q);
+        startActivity(browser);
     }
 
     private void locateMe(){
